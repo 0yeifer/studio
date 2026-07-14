@@ -330,6 +330,36 @@ def find_page_with_route(app_name: str, page_route: str) -> str | None:
 		pass
 
 
+@frappe.whitelist(allow_guest=True)
+def get_published_page(app_name: str, page_route: str) -> dict | None:
+	"""Return a published Studio Page (with its resources and variables) for anonymous rendering.
+
+	Guest-safe: only a page whose ``published`` flag is set is ever returned, so unpublished
+	drafts are never exposed. The published-app renderer calls this instead of the
+	permission-gated ``frappe.client.get`` / ``frappe.client.get_list`` RPCs, which a Guest
+	session is not allowed to call.
+	"""
+	if not page_route.startswith("/"):
+		page_route = f"/{page_route}"
+
+	page_name = frappe.db.get_value(
+		"Studio Page",
+		{"studio_app": app_name, "route": page_route, "published": 1},
+		"name",
+	)
+	if not page_name:
+		return None
+
+	data = frappe.get_doc("Studio Page", page_name).as_dict()
+	# never leak unpublished edits to anonymous visitors
+	data.pop("draft_blocks", None)
+	# frappe-ui's data layer keys resources by `resource_id` (aliased from `name` when fetched
+	# via the list resource); embed the same alias so the renderer needs no extra call.
+	for resource in data.get("resources") or []:
+		resource["resource_id"] = resource.get("name")
+	return data
+
+
 @frappe.whitelist()
 def duplicate_page(page_name: str, app_name: str | None):
 	if not frappe.has_permission("Studio Page", ptype="write"):

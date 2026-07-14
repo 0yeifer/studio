@@ -273,14 +273,28 @@ async function fetchPage(pageName: string) {
 }
 
 async function findPageWithRoute(appName: string, pageRoute: string) {
-	let pageName = createResource({
-		url: "studio.studio.doctype.studio_page.studio_page.find_page_with_route",
+	// Preview mode is always authenticated (it may show unpublished drafts), so it keeps using
+	// the permission-gated lookup + document fetch.
+	if (window.is_preview) {
+		let pageName = createResource({
+			url: "studio.studio.doctype.studio_page.studio_page.find_page_with_route",
+			method: "GET",
+			params: { app_name: appName, page_route: pageRoute },
+		})
+		await pageName.fetch()
+		pageName = pageName.data
+		return fetchPage(pageName)
+	}
+
+	// A published app may be viewed anonymously. Fetch the page together with its resources and
+	// variables through a single guest-safe endpoint, so the render needs no Guest-blocked RPCs.
+	const page = createResource({
+		url: "studio.studio.doctype.studio_page.studio_page.get_published_page",
 		method: "GET",
 		params: { app_name: appName, page_route: pageRoute },
 	})
-	await pageName.fetch()
-	pageName = pageName.data
-	return fetchPage(pageName)
+	await page.fetch()
+	return page.data
 }
 
 // data

@@ -51,12 +51,25 @@ const useCodeStore = defineStore("codeStore", () => {
 		routerObject.value = router
 	}
 
-	async function setPageResources(page: StudioPage, setResourceConfig: boolean = false) {
-		studioPageResources.filters = { parent: page.name }
-		await studioPageResources.reload()
+	async function setPageResources(
+		page: StudioPage,
+		setResourceConfig: boolean = false,
+		useEmbedded: boolean = false,
+	) {
 		resources.value = {}
 
-		const resourcePromises = studioPageResources.data.map(async (resource: Resource) => {
+		// The published (possibly anonymous) renderer receives the child rows embedded in the page
+		// payload, so it must not call the permission-gated list resource.
+		let resourceRows: Resource[]
+		if (useEmbedded) {
+			resourceRows = ((page as any).resources || []) as Resource[]
+		} else {
+			studioPageResources.filters = { parent: page.name }
+			await studioPageResources.reload()
+			resourceRows = studioPageResources.data
+		}
+
+		const resourcePromises = resourceRows.map(async (resource: Resource) => {
 			const newResource = await getNewResource(resource, {
 				...variables.value,
 				route: unref(routeObject.value),
@@ -82,12 +95,20 @@ const useCodeStore = defineStore("codeStore", () => {
 		})
 	}
 
-	async function setPageVariables(page: StudioPage) {
-		studioVariables.filters = { parent: page.name }
-		await studioVariables.reload()
+	async function setPageVariables(page: StudioPage, useEmbedded: boolean = false) {
 		variables.value = {}
 
-		studioVariables.data.map((variable: Variable) => {
+		// See setPageResources: the anonymous renderer uses the child rows embedded in the page.
+		let variableRows: Variable[]
+		if (useEmbedded) {
+			variableRows = ((page as any).variables || []) as Variable[]
+		} else {
+			studioVariables.filters = { parent: page.name }
+			await studioVariables.reload()
+			variableRows = studioVariables.data
+		}
+
+		variableRows.map((variable: Variable) => {
 			variables.value[variable.variable_name] = getInitialVariableValue(variable)
 		})
 	}

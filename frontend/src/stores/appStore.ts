@@ -16,8 +16,11 @@ const useAppStore = defineStore("appStore", () => {
 
 	async function setPageData(page: StudioPage) {
 		activePage.value = page
-		await codeStore.setPageVariables(page)
-		await codeStore.setPageResources(page)
+		// Published render carries its resources/variables embedded (guest-safe, no extra RPCs);
+		// preview render is authenticated and still fetches them via the list resources.
+		const useEmbedded = !window.is_preview
+		await codeStore.setPageVariables(page, useEmbedded)
+		await codeStore.setPageResources(page, false, useEmbedded)
 	}
 
 	return {
