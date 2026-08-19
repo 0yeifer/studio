@@ -22,21 +22,7 @@ class StudioAppBuilder:
 		self.studio_component_blocks = {}
 		self.custom_vue_components: dict[str, str] = {}  # {ComponentName: absolute_path}
 		self.page_scripts: list[dict] = []  # [{page_name, file_path}]
-
-		if self.is_standard:
-			"""Build a standard (exported) studio app.
-			Output goes to: apps/{frappe_app}/{frappe_app}/public/app_builds/{app_name}/
-			Served at: /assets/{frappe_app}/app_builds/{app_name}/
-			"""
-			self.out_dir = frappe.get_app_path(self.frappe_app, "public", "app_builds", self.app_name)
-			self.base = f"/assets/{self.frappe_app}/app_builds/{self.app_name}/"
-		else:
-			"""Build a custom (DB) studio app for the current site.
-			Output goes to: sites/{sitename}/public/files/app_builds/{app_name}/
-			Served at: /files/app_builds/{app_name}/
-			"""
-			self.out_dir = os.path.abspath(get_files_path("app_builds", self.app_name))
-			self.base = f"/files/app_builds/{self.app_name}/"
+		self.out_dir, self.base = get_app_build_target(self.app_name, self.is_standard, self.frappe_app)
 
 	def build(self):
 		if self.is_standard:
@@ -301,6 +287,47 @@ def get_published_custom_apps() -> list[str]:
 	)
 
 	return custom_apps
+
+
+def build_into_app_folder(is_standard: bool) -> bool:
+	"""Whether a studio app's bundle belongs inside its frappe app (served under /assets/).
+
+	Only development benches serve /assets/ straight off the working tree. On a production
+	bench /assets/ is a static asset tree that is collected (and, in containerised deploys,
+	baked into the image) before `bench build-studio-app` ever runs, so a bundle written
+	into apps/<frappe_app>/.../public/app_builds/ afterwards is not reachable over HTTP.
+	developer_mode is the switch for that -- no extra site configuration.
+	"""
+	if not is_standard:
+		# custom (DB authored) apps have no frappe app to live in
+		return False
+
+	if not getattr(frappe.local, "site", None):
+		# no site context (e.g. `bench build`): the site public path is unknown, and there is
+		# no developer_mode to read either, so keep the historical in-app location
+		return True
+
+	return bool(frappe.utils.cint(frappe.conf.developer_mode))
+
+
+def get_app_build_target(
+       app_name: str, is_standard: bool, frappe_app: str | None = None
+) -> tuple[str, str]:
+	"""Return (out_dir, base_url) for a studio app's compiled bundle.
+
+	Development, standard app:
+			apps/{frappe_app}/{frappe_app}/public/app_builds/{app_name}/  ->  /assets/{frappe_app}/app_builds/{app_name}/
+	Production, or custom (DB) app:
+			sites/{sitename}/public/files/app_builds/{app_name}/          ->  /files/app_builds/{app_name}/
+	"""
+	if build_into_app_folder(is_standard):
+		out_dir = frappe.get_app_path(frappe_app, "public", "app_builds", app_name)
+		base = f"/assets/{frappe_app}/app_builds/{app_name}/"
+	else:
+		out_dir = os.path.abspath(get_files_path("app_builds", app_name))
+		base = f"/files/app_builds/{app_name}/"
+
+	return out_dir, base
 
 
 def get_studio_folder(frappe_app: str) -> str | None:
