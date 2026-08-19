@@ -5,7 +5,6 @@ import os
 
 import frappe
 from frappe import _
-from frappe.utils import get_files_path
 from frappe.website.page_renderers.document_page import DocumentPage
 from frappe.website.website_generator import WebsiteGenerator
 
@@ -192,24 +191,11 @@ class StudioApp(WebsiteGenerator):
 		Read the Vite manifest file for this app and return asset paths
 		https://vite.dev/guide/backend-integration.html#backend-integration
 		"""
+		from studio.build import get_app_build_target
+
 		try:
-			if self.is_standard:
-				manifest_path = os.path.join(
-					frappe.get_app_path(self.frappe_app),
-					"public",
-					"app_builds",
-					self.name,
-					".vite",
-					"manifest.json",
-				)
-				base_path = f"/assets/{self.frappe_app}/app_builds/{self.name}/"
-			else:
-				manifest_path = os.path.join(
-					get_files_path("app_builds", self.name),
-					".vite",
-					"manifest.json",
-				)
-				base_path = f"/files/app_builds/{self.name}/"
+			build_dir, base_path = get_app_build_target(self.name, self.is_standard, self.frappe_app)
+			manifest_path = os.path.join(build_dir, ".vite", "manifest.json")
 
 			if not os.path.exists(manifest_path):
 				return None
@@ -332,9 +318,16 @@ class StudioApp(WebsiteGenerator):
 
 
 def get_vite_dev_server_port():
-	port_offset = frappe.conf.webserver_port - 8000
+	# `webserver_port` is only written to common_site_config.json by `bench` on development
+	# benches; on a production bench it is absent, so fall back to the default 8000 offset.
+	port_offset = frappe.utils.cint(frappe.conf.webserver_port or 8000) - 8000
 	return 8080 + port_offset
 
 
 def get_vite_dev_server_host():
+	"""Host of the `yarn dev` Vite server. Only meaningful in developer mode -- there is no
+	dev server running in production, and the renderer templates skip the HMR block there."""
+	if not frappe.utils.cint(frappe.conf.developer_mode):
+		return None
+
 	return f"{frappe.local.site}:{get_vite_dev_server_port()}"
